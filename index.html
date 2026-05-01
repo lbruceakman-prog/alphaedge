@@ -345,7 +345,7 @@ const ALPACA_DATA = 'https://data.alpaca.markets';
 let alpacaConnected = false;
 
 // ─── Local state (fallback when not connected) ───
-const SEED={AAPL:182,NVDA:875,MSFT:415,TSLA:245,AMZN:185,GOOGL:175,META:520,SPY:525,QQQ:448,AMD:168};
+const SEED={AAPL:280,NVDA:1050,MSFT:420,TSLA:280,AMZN:210,GOOGL:175,META:580,SPY:560,QQQ:470,AMD:110};
 const prices={},openP={},hist={},sentiments={};
 let watchlist=['AAPL','NVDA','TSLA','SPY','AMD'];
 let cash=100000,startVal=100000,simPositions={};
@@ -460,19 +460,27 @@ async function fetchAlpacaPrices(){
   if(!alpacaConnected){watchlist.forEach(simTick);renderWL();return;}
   try{
     const syms=watchlist.join(',');
-    const data=await alpacaGet(`/v2/stocks/quotes/latest?symbols=${syms}&feed=iex`,ALPACA_DATA);
-    const bars=await alpacaGet(`/v2/stocks/bars/latest?symbols=${syms}&feed=iex`,ALPACA_DATA);
+    // Use snapshots endpoint — returns latest trade price (real-time)
+    const snap=await alpacaGet(`/v2/stocks/snapshots?symbols=${syms}&feed=iex`,ALPACA_DATA);
+    let gotAny=false;
     watchlist.forEach(t=>{
-      const bar=bars?.bars?.[t];
-      if(bar){
-        prices[t]=bar.c;
-        if(!openP[t])openP[t]=bar.o;
-        hist[t].push(bar.c);if(hist[t].length>200)hist[t].shift();
+      const s=snap?.[t];
+      if(s){
+        const latestTrade=s.latestTrade?.p||s.minuteBar?.c||s.dailyBar?.c;
+        const openPrice=s.dailyBar?.o||latestTrade;
+        if(latestTrade){
+          prices[t]=+latestTrade.toFixed(2);
+          if(!openP[t]||openP[t]===SEED[t])openP[t]=+openPrice.toFixed(2);
+          hist[t].push(prices[t]);if(hist[t].length>200)hist[t].shift();
+          gotAny=true;
+        }
       }
     });
-    document.getElementById('data-src').textContent='data: Alpaca live';
+    document.getElementById('data-src').textContent=gotAny?'data: Alpaca live':'data: simulated';
+    if(!gotAny)watchlist.forEach(simTick);
     renderWL();
   }catch(e){
+    console.warn('Alpaca price fetch error:',e.message);
     watchlist.forEach(simTick);renderWL();
   }
 }
